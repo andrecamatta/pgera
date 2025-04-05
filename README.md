@@ -1,4 +1,6 @@
-# MVP - Pipeline de Dados para Análise Fundamentalista no Setor de Geração de Energia Elétrica
+# MVP - Pipeline de dados para análise fundamentalista no setor de geração de energia elétrica
+
+![PGERA Logo](pgera_logo.png)
 
 ## Introdução
 
