@@ -22,14 +22,108 @@ A análise fundamentalista é essencial para o processo de valuation (avaliaçã
 
 O principal objetivo deste MVP é desenvolver um pipeline de dados inicial que permita:
 
-- **Coleta automatizada:** Obtenção de dados padronizados das demonstrações financeiras periódicas (DFPs) das empresas, no site da CVM.
+- **Coleta automatizada:** Obtenção de dados padronizados das demonstrações financeiras padronizadas (DFPs) das empresas, no site da CVM.
 - **Integração e padronização:** Consolidação e tratamento básico dos dados financeiros, garantindo consistência para análises preliminares.
 - **Instrumental intermediário de análise:** Preparação dos dados financeiros para fazer análises de balanço tais como análise horizontal e vertical, alavancagem operacional e financeira, estudo do fluxo de fundos no ativo circulante, acompanhamento de indicadores de liquidez e de ciclo operacional, entre muitos outros. 
 
 Embora a visão de longo prazo inclua a integração de dados de notícias, informações de agências reguladoras (como dados sobre usinas e consumo de energia) e análises de outros especialistas, o foco inicial deste MVP está na estruturação dos dados financeiros fundamentais.
 
-O instrumental intermediário de análise de balanços por si só não é suficiente para uma análise econômica financeira mais conclusiva. Dessa forma, em fases futuras, o PGERA também poderá incorporar modelos de linguagem (LLMs) para potencializar as análises fundamentalistas, estabelecendo correlações entre os dados estruturados das DFPs e informações textuais disponíveis em fontes diversas, como notícias públicas, press releases e notas explicativas. 
+Prevê-se, ainda, uma futura integração com modelos de linguagem (LLMs) para oferecer suporte adicional na geração interativa de relatórios, agregando análises textuais aos dados financeiros.
 
-Essa abordagem permitirá contextualizar variações significativas nos dados financeiros. Por exemplo, um aumento expressivo nos ativos de uma empresa de um ano para outro poderia ser correlacionado, de forma automática, com anúncios de aquisições divulgados em press releases ou detalhados nas notas explicativas das DFPs, proporcionando aos analistas insights contextualizados que explicam as mudanças nos indicadores financeiros. 
+## Carga de dados e ETL até a camada silver
 
-Além disso, as LLMs poderão auxiliar na geração interativa de relatórios, onde o analista mantém o controle editorial enquanto o sistema sugere estruturas, formula análises preliminares com base nos dados processados e ajuda a redigir seções específicas do documento, acelerando significativamente o processo de elaboração de relatórios sem comprometer a qualidade e o julgamento profissional do especialista.
+O processo de ingestão e transformação inicial dos dados (ETL) é fundamental para estruturar as informações financeiras antes das análises. As etapas principais são:
+
+1.  **Extração da Fonte:** Os dados brutos das Demonstrações Financeiras Padronizadas (DFPs) são obtidos diretamente do repositório FTP da CVM (`dados.cvm.gov.br`). Arquivos ZIP anuais contendo múltiplos arquivos CSV são baixados.
+2.  **Processamento e Armazenamento na Camada Bronze:** Os arquivos ZIP são extraídos, e cada arquivo CSV é lido individualmente utilizando Pandas. Nesta etapa, são aplicadas configurações de codificação (`latin1`) e tipos de dados específicos. Os DataFrames resultantes de cada ano são salvos em formato Parquet no Google Cloud Storage (GCS), constituindo a camada Bronze (`gs://pgera-bronze/dfps/`).
+3.  **Consolidação e Armazenamento na Camada Silver:** Os arquivos Parquet anuais da camada Bronze são lidos, filtrados pelas empresas de interesse (setor elétrico) e enriquecidos com colunas adicionais (como o ano extraído da data de referência). Os dados de múltiplos anos são então consolidados em um único DataFrame, que é salvo em formato Parquet na camada Silver (`gs://pgera-silver/dfps/dfps_consolidated.parquet`).
+4.  **Criação do Esquema Estrela na Camada Silver:** Utilizando Apache Spark SQL sobre os dados consolidados na camada Silver, um esquema em estrela é construído para facilitar consultas analíticas. Este esquema consiste em:
+    *   `dim_empresa`: Dimensão com informações das companhias (CNPJ, nome).
+    *   `dim_tempo`: Dimensão com informações temporais (ano).
+    *   `dim_metrica`: Dimensão com informações das contas financeiras (código, nome, categoria).
+    *   `fato_dfp`: Tabela fato contendo os valores (`vl_conta`) associados às dimensões. É importante notar que esta tabela é tratada para conter apenas a versão mais recente (`MAX(versao)`) de cada conta para um dado CNPJ e ano.
+
+O fluxo de dados até a criação do esquema estrela na camada Silver pode ser visualizado abaixo:
+
+```mermaid
+graph TD
+    A[FTP CVM (ZIPs com CSVs)] --> B(Download e Extração);
+    B --> C{Processamento Pandas};
+    C --> D[Camada Bronze (GCS - Parquet por ano)];
+    D --> E{Consolidação e Filtro};
+    E --> F[Camada Silver (GCS - Parquet Consolidado)];
+    F --> G{Spark SQL};
+
+    subgraph "Esquema Estrela (Silver)"
+        G --> H[fa:fa-table dim_empresa];
+        G --> I[fa:fa-table dim_tempo];
+        G --> J[fa:fa-table dim_metrica];
+        G --> K[fa:fa-table fato_dfp];
+    end
+```
+
+## Construção e uso da camada gold
+
+A camada Gold é construída sobre o esquema estrela da camada Silver e contém tabelas agregadas e métricas calculadas, otimizadas para análises financeiras específicas e consumo por ferramentas de BI ou dashboards. O objetivo é fornecer visões pré-processadas que respondam diretamente a perguntas de negócio.
+
+Neste projeto, a camada Gold reside no GCS (`gs://pgera-gold/`) dentro de um banco de dados chamado `horizontal_analysis`. As principais tabelas criadas são:
+
+1.  **`assets_liabilities_analysis`**: Tabela pivotada contendo os valores anuais das principais contas do Balanço Patrimonial (Ativo Total, Passivo Total, PL, etc.) para cada empresa. Facilita a análise horizontal da evolução patrimonial.
+2.  **`income_statement_analysis`**: Tabela pivotada similar à anterior, mas focada nas contas da Demonstração do Resultado do Exercício (DRE), como Receita Líquida, Resultado Bruto, Lucro Líquido, etc. Permite a análise horizontal da performance operacional.
+3.  **`profitability_metrics`**: Contém métricas de rentabilidade calculadas anualmente para cada empresa, como Margem Bruta, Margem Líquida, Retorno sobre Ativos (ROA) e Retorno sobre Patrimônio Líquido (ROE).
+4.  **`liquidity_metrics`**: Apresenta índices de liquidez calculados anualmente, incluindo Liquidez Corrente, Liquidez Imediata (estimada), Liquidez Geral e Nível de Endividamento percentual.
+
+Estas tabelas da camada Gold são a base para as visualizações e análises comparativas apresentadas no notebook `pgera_dfps.ipynb`, como gráficos de evolução de indicadores e dashboards comparativos entre empresas.
+
+Os diagramas abaixo ilustram a derivação das tabelas da camada Gold a partir do esquema estrela da camada Silver:
+
+**Diagrama 1: Criação das Tabelas de Análise Horizontal (Gold)**
+
+```mermaid
+graph TD
+    subgraph "Silver Layer (Star Schema)"
+        S_Fato[fa:fa-table fato_dfp]
+        S_DimEmp[fa:fa-table dim_empresa]
+        S_DimMet[fa:fa-table dim_metrica]
+        S_DimTempo[fa:fa-table dim_tempo]
+    end
+
+    subgraph "Gold Layer (horizontal_analysis DB)"
+        G_AL[fa:fa-table assets_liabilities_analysis]
+        G_IS[fa:fa-table income_statement_analysis]
+    end
+
+    S_Fato -- CNPJ, Ano, Conta, Valor --> G_AL;
+    S_DimEmp -- Nome Empresa --> G_AL;
+    S_DimMet -- Nome Conta (Ativo/Passivo) --> G_AL;
+    S_DimTempo -- Ano --> G_AL;
+
+    S_Fato -- CNPJ, Ano, Conta, Valor --> G_IS;
+    S_DimEmp -- Nome Empresa --> G_IS;
+    S_DimMet -- Nome Conta (DRE) --> G_IS;
+    S_DimTempo -- Ano --> G_IS;
+```
+
+```mermaid
+graph TD
+    subgraph "Silver Layer (Star Schema)"
+        S_Fato[fa:fa-table fato_dfp]
+        S_DimEmp[fa:fa-table dim_empresa]
+        S_DimMet[fa:fa-table dim_metrica]
+        S_DimTempo[fa:fa-table dim_tempo]
+    end
+
+    subgraph "Gold Layer (horizontal_analysis DB)"
+        G_Profit[fa:fa-table profitability_metrics]
+        G_Liquid[fa:fa-table liquidity_metrics]
+    end
+
+    S_Fato -- Valores (Receita, Lucro, Ativo, PL) --> G_Profit;
+    S_DimEmp -- CNPJ, Nome Empresa --> G_Profit;
+    S_DimMet -- Nome Conta --> G_Profit;
+    S_DimTempo -- Ano --> G_Profit;
+
+    S_Fato -- Valores (Ativo Circ, Passivo Circ, etc.) --> G_Liquid;
+    S_DimEmp -- CNPJ, Nome Empresa --> G_Liquid;
+    S_DimMet -- Nome Conta --> G_Liquid;
+    S_DimTempo -- Ano --> G_Liquid;
