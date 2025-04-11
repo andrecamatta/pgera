@@ -34,10 +34,10 @@ Prevê-se, ainda, uma futura integração com modelos de linguagem (LLMs) para o
 
 O processo de ingestão e transformação inicial dos dados (ETL) é fundamental para estruturar as informações financeiras antes das análises. As etapas principais são:
 
-1.  **Extração da Fonte:** Os dados brutos das Demonstrações Financeiras Padronizadas (DFPs) são obtidos diretamente do repositório FTP da CVM (`dados.cvm.gov.br`). Arquivos ZIP anuais contendo múltiplos arquivos CSV são baixados.
-2.  **Processamento e Armazenamento na Camada Bronze:** Os arquivos ZIP são extraídos, e cada arquivo CSV é lido individualmente utilizando Pandas. Nesta etapa, são aplicadas configurações de codificação (`latin1`) e tipos de dados específicos. Os DataFrames resultantes de cada ano são salvos em formato Parquet no Google Cloud Storage (GCS), constituindo a camada Bronze (`gs://pgera-bronze/dfps/`).
-3.  **Consolidação e Armazenamento na Camada Silver:** Os arquivos Parquet anuais da camada Bronze são lidos, filtrados pelas empresas de interesse (setor elétrico) e enriquecidos com colunas adicionais (como o ano extraído da data de referência). Os dados de múltiplos anos são então consolidados em um único DataFrame, que é salvo em formato Parquet na camada Silver (`gs://pgera-silver/dfps/dfps_consolidated.parquet`).
-4.  **Criação do Esquema Estrela na Camada Silver:** Utilizando Apache Spark SQL sobre os dados consolidados na camada Silver, um esquema em estrela é construído para facilitar consultas analíticas. Este esquema consiste em:
+1.  **Extração da fonte:** Os dados brutos das Demonstrações Financeiras Padronizadas (DFPs) são obtidos diretamente do repositório FTP da CVM (`dados.cvm.gov.br`). Arquivos ZIP anuais contendo múltiplos arquivos CSV são baixados.
+2.  **Processamento e armazenamento na camada bronze:** Os arquivos ZIP são extraídos, e cada arquivo CSV é lido individualmente utilizando Pandas. Nesta etapa, são aplicadas configurações de codificação (`latin1`) e tipos de dados específicos. Os DataFrames resultantes de cada ano são salvos em formato Parquet no Google Cloud Storage (GCS), constituindo a camada bronze (`gs://pgera-bronze/dfps/`).
+3.  **Consolidação e armazenamento na camada silver:** Os arquivos Parquet anuais da camada Bronze são lidos, filtrados pelas empresas de interesse (setor elétrico) e enriquecidos com colunas adicionais (como o ano extraído da data de referência). Os dados de múltiplos anos são então consolidados em um único DataFrame, que é salvo em formato Parquet na camada Silver (`gs://pgera-silver/dfps/dfps_consolidated.parquet`).
+4.  **Criação do esquema estrela na camada silver:** Utilizando Apache Spark SQL sobre os dados consolidados na camada Silver, um esquema em estrela é construído para facilitar consultas analíticas. Este esquema consiste em:
     *   `dim_empresa`: Dimensão com informações das companhias (CNPJ, nome).
     *   `dim_tempo`: Dimensão com informações temporais (ano).
     *   `dim_metrica`: Dimensão com informações das contas financeiras (código, nome, categoria).
@@ -45,21 +45,59 @@ O processo de ingestão e transformação inicial dos dados (ETL) é fundamental
 
 O fluxo de dados até a criação do esquema estrela na camada Silver pode ser visualizado abaixo:
 
+flowchart TD
+    subgraph Fonte
+        A["FTP CVM (ZIP/CSV)"]
+    end
+    subgraph Bronze_GCS
+        B["Pandas: process_year"] -- Lê --> A
+        C["GCS: dfps_{year}.parquet"]
+        B -- Salva --> C
+    end
+    subgraph Silver_GCS
+        D["Pandas: consolidate_years"] -- Lê --> C
+        E["GCS: dfps_consolidated.parquet"]
+        D -- Salva --> E
+    end
+    subgraph Silver_Hive_Metastore_GCS_Data
+        F["Spark: load_dfps_data"] -- Define Tabela Externa --> G["Hive: pgera_silver.dfps"]
+        G -- Aponta para --> E
+        H["Spark: create_silver_star_schema"] -- Lê --> G
+        I["Hive: Esquema Estrela (Tabelas Externas)"]
+        H -- Cria --> I
+        I -- Dados em --> J["GCS: star_schema_{ts}/*.parquet"]
+    end
+    A --> B
+    C --> D
+    E --> F
+    G --> H
+```
+
 ```mermaid
 graph TD
-    A[FTP CVM (ZIPs com CSVs)] --> B(Download e Extração);
-    B --> C{Processamento Pandas};
-    C --> D[Camada Bronze (GCS - Parquet por ano)];
-    D --> E{Consolidação e Filtro};
-    E --> F[Camada Silver (GCS - Parquet Consolidado)];
-    F --> G{Spark SQL};
 
-    subgraph "Esquema Estrela (Silver)"
-        G --> H[fa:fa-table dim_empresa];
-        G --> I[fa:fa-table dim_tempo];
-        G --> J[fa:fa-table dim_metrica];
-        G --> K[fa:fa-table fato_dfp];
-    end
+subgraph Esquema em estrela DFPs
+
+    Fato[fato_dfp]
+    DimEmpresa[dim_empresa]
+    DimTempo[dim_tempo]
+    DimMetrica[dim_metrica]
+
+    Fato -->|empresa_id| DimEmpresa
+    Fato -->|tempo_id| DimTempo
+    Fato -->|metrica_id| DimMetrica
+
+    CamposFato["empresa_id (FK)<br>tempo_id (FK)<br>metrica_id (FK)<br>valor (DOUBLE)<br>versao (BIGINT)"]
+    CamposEmpresa["empresa_id (PK)<br>nome_pregao (STRING)<br>setor (STRING)<br>segmento (STRING)"]
+    CamposTempo["tempo_id (PK)<br>ano (INT)"]
+    CamposMetrica["metrica_id (PK - MD5)<br>codigo_conta (STRING)<br>nome_conta (STRING)<br>categoria (STRING)"]
+
+    Fato --- CamposFato
+    DimEmpresa --- CamposEmpresa
+    DimTempo --- CamposTempo
+    DimMetrica --- CamposMetrica
+
+end
 ```
 
 ## Construção e uso da camada gold
