@@ -164,6 +164,7 @@ graph TD
     S_DimEmp -- CNPJ, Nome Empresa --> G_Liquid;
     S_DimMet -- Nome Conta --> G_Liquid;
     S_DimTempo -- Ano --> G_Liquid;
+```
 
 ## Catálogo de Dados da Camada Gold (`horizontal_analysis`)
 
