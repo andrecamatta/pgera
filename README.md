@@ -116,8 +116,6 @@ Estas tabelas da camada Gold são a base para as visualizações e análises com
 
 Os diagramas abaixo ilustram a derivação das tabelas da camada Gold a partir do esquema estrela da camada Silver:
 
-**Diagrama 1: Criação das Tabelas de Análise Horizontal (Gold)**
-
 ```mermaid
 graph TD
     subgraph "Silver Layer (Star Schema)"
@@ -166,3 +164,15 @@ graph TD
     S_DimEmp -- CNPJ, Nome Empresa --> G_Liquid;
     S_DimMet -- Nome Conta --> G_Liquid;
     S_DimTempo -- Ano --> G_Liquid;
+
+## Catálogo de Dados da Camada Gold (`horizontal_analysis`)
+
+A camada Gold (`gs://pgera-gold/horizontal_analysis/`) contém tabelas agregadas e métricas calculadas, prontas para análise e visualização. Abaixo está um catálogo das principais tabelas geradas neste projeto:
+
+| Tabela                          | Descrição                                                                                                | Localização (GCS)                                                    |
+| :------------------------------ | :------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------- |
+| `companies`                     | Tabela de dimensão com CNPJ e nome das empresas analisadas.                                              | `gs://pgera-gold/horizontal_analysis/companies/`                     |
+| `assets_liabilities_analysis` | Análise horizontal anual das principais contas do Balanço Patrimonial (Ativo, Passivo, PL).                | `gs://pgera-gold/horizontal_analysis/assets_liabilities_analysis/` |
+| `income_statement_analysis`   | Análise horizontal anual das principais contas da Demonstração de Resultado (Receita, Custos, Lucro).    | `gs://pgera-gold/horizontal_analysis/income_statement_analysis/`   |
+| `profitability_metrics`       | Métricas de rentabilidade calculadas anualmente (Margens, ROA, ROE).                                       | `gs://pgera-gold/horizontal_analysis/profitability_metrics/`       |
+| `liquidity_metrics`           | Índices de liquidez calculados anualmente (Corrente, Imediata (estimada), Geral, Endividamento).          | `gs://pgera-gold/horizontal_analysis/liquidity_metrics/`           |
