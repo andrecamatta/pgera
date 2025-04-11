@@ -45,6 +45,7 @@ O processo de ingestão e transformação inicial dos dados (ETL) é fundamental
 
 O fluxo de dados até a criação do esquema estrela na camada Silver pode ser visualizado abaixo:
 
+```mermaid
 flowchart TD
     subgraph Fonte
         A["FTP CVM (ZIP/CSV)"]
