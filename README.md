@@ -105,6 +105,10 @@ end
 
 A camada Gold é construída sobre o esquema estrela da camada Silver e contém tabelas agregadas e métricas calculadas, otimizadas para análises financeiras específicas e consumo por ferramentas de BI ou dashboards. O objetivo é fornecer visões pré-processadas que respondam diretamente a perguntas de negócio.
 
+O foco inicial será a construção de análises horizontais baseada no livro Estrutura e Análise de Balanços de Alexandre Assaf Neto, que propõe uma abordagem sistemática para a análise de balanços patrimoniais e demonstrações de resultados. A análise horizontal envolve a comparação de dados financeiros ao longo do tempo, permitindo identificar tendências e variações. 
+
+![Estrutura e Análise de Balanços](capa_est_balancos.jpg)
+
 Neste projeto, a camada Gold reside no GCS (`gs://pgera-gold/`) dentro de um banco de dados chamado `horizontal_analysis`. As principais tabelas criadas são:
 
 1.  **`assets_liabilities_analysis`**: Tabela pivotada contendo os valores anuais das principais contas do Balanço Patrimonial (Ativo Total, Passivo Total, PL, etc.) para cada empresa. Facilita a análise horizontal da evolução patrimonial.
@@ -166,7 +170,7 @@ graph TD
     S_DimTempo -- Ano --> G_Liquid;
 ```
 
-## Catálogo de Dados da Camada Gold (`horizontal_analysis`)
+## Catálogo de dados da camada gold (`horizontal_analysis`)
 
 A camada Gold (`gs://pgera-gold/horizontal_analysis/`) contém tabelas agregadas e métricas calculadas, prontas para análise e visualização. Abaixo está um catálogo das principais tabelas geradas neste projeto:
 
